@@ -166,3 +166,4 @@ fabric.properties
 .nfs*
 
 docker-compose.yml
+.env

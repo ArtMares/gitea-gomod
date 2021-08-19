@@ -1,0 +1,8 @@
+.editorconfig
+.env
+.gitignore
+
+README.md
+Taskfile.yml
+Taskfile_windows.yml
+docker-compose.yml

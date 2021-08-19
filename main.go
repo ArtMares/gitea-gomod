@@ -50,7 +50,7 @@ type proxy struct {
 
 func (h *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     userIP := h.ReadUserIP(r)
-    log.Println(userIP, " ", r.Method, " ", r.URL)
+    log.Println("Request: ", userIP, " ", r.Method, " ", r.URL)
     scheme := h.ReadScheme(r)
     if scheme != "http" && scheme != "https" {
        msg := "unsupported protocol scheme " + scheme
@@ -58,6 +58,8 @@ func (h *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
        log.Println(msg)
        return
     }
+    //dump, _ := httputil.DumpRequest(r, true)
+    //log.Println("Dump start: ----->\n", string(dump), "Dump end: <-----")
     r.RequestURI = ""
     client := &http.Client{}
     h.DeleteHopHeaders(r.Header)
@@ -68,6 +70,11 @@ func (h *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     }
     r.URL = h.Address.ResolveReference(r.URL)
 
+    log.Println("New request: ", r.URL)
+
+    //dump, _ = httputil.DumpRequest(r, true)
+    //log.Println("Dump start: ----->\n", string(dump), "Dump end: <-----")
+
     resp, err := client.Do(r)
     if err != nil {
         http.Error(w, "Server Error", http.StatusInternalServerError)
@@ -76,7 +83,7 @@ func (h *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     }
     defer resp.Body.Close()
 
-    log.Println(userIP, " ", resp.Status)
+    log.Println("Response: ", userIP, " ", resp.Status)
 
     h.DeleteHopHeaders(resp.Header)
 

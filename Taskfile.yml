@@ -1,0 +1,173 @@
+version: '3'
+
+includes:
+    prerequisites: ./Taskfile_{{OS}}.yml
+
+env:
+    DOCKER:
+        sh: docker -v
+    DOCKER_COMPOSE:
+        sh: docker-compose -v
+    LAST_GIT_TAG:
+        sh: git describe --tags $(git rev-list --tags --max-count=1)
+
+dotenv:
+    - .env
+
+vars:
+    APP_NAME: gitea-gomod
+
+tasks:
+    default:
+        deps: [dependencies]
+        cmds:
+            - cmd: echo Application {{.APP_NAME}}
+              silent: true
+            - task: version
+            - task: summary
+        silent: true
+
+    version:
+        desc: 'Show current release version'
+        cmds:
+            - echo "Release version $LAST_GIT_TAG"
+        silent: true
+
+    summary:
+        desc: 'Summary information'
+        cmds:
+            - echo "Docker available $DOCKER"
+            - echo "Docker-Compose available $DOCKER_COMPOSE"
+        silent: true
+
+    dependencies:
+        desc: 'Install all external dependencies using OS package manager'
+        deps: [prerequisites:all]
+
+    prerequisites:all:
+        deps: [prerequisites:docker, prerequisites:docker-compose]
+
+    dep:
+        run: once
+        desc: 'Download the dependencies'
+        cmds:
+            - go mod download
+
+    vendor:
+        run: once
+        desc: 'Copy dependencies in vendor directory'
+        deps: [dep]
+        cmds:
+            - go mod vendor
+    #            - git add vendor -u
+
+    build:
+        cmds:
+            - task: compose:build
+              vars:
+                  TAG: '{{.LAST_GIT_TAG}}'
+
+    release:
+        desc: 'Build release docker image and push to registry'
+        deps: [dependencies, version]
+        vars:
+            TAG: '{{.LAST_GIT_TAG}}'
+        cmds:
+            - task: docker:build
+              vars:
+                  TAG: '{{.TAG}}'
+            - task: docker:push
+              vars:
+                  TAG: '{{.TAG}}'
+
+    deploy:
+        deps: [release]
+        cmds:
+            - task: docker:push
+              vars:
+                  TAG: latest
+            - task: portainer:update
+
+    dev:update:
+        desc: 'Update container on development server'
+        deps: [dependencies]
+        cmds:
+            - task: compose:build
+            - task: clear:images
+            - task: compose:push
+            - task: portainer:update
+
+    portainer:update:
+        cmds:
+            - curl -X POST '{{.PORTAINER_WEBHOOK}}'
+        preconditions:
+            -   sh: '{{if eq .PORTAINER_WEBHOOK ""}}exit 1{{else}}exit 0{{end}}'
+                msg: 'PORTAINER_WEBHOOK is empty'
+
+    binary:build:
+        desc: 'Build the application into a binary file'
+        deps: [vendor]
+        cmds:
+            - go build -o build/{{.APP_NAME}} .
+
+    clear:images:
+        desc: 'Cleaning not tagging images'
+        vars:
+            NOT_TAGGING_IMAGES:
+                #        sh: docker images -f "dangling=true" -f "reference={{.REGISTRY}}" -q
+                sh: docker images -f "dangling=true" -q
+        cmds:
+            - |
+                {{if ne .NOT_TAGGING_IMAGES "" -}}
+                docker rmi {{range $i, $image_id := .NOT_TAGGING_IMAGES | splitLines -}}{{$image_id -}} {{- end}}
+                {{- end}}
+
+    #    clear:vendor:
+    #        desc: 'Cleaning vendor directory'
+    #        cmds:
+    #            - sh: 'command {{if eq OS "windows"}}rm -r vendor{{end}}'
+
+    docker:build:
+        desc: 'Build docker image'
+        deps: [dependencies, vendor]
+        vars:
+            TAG: '{{default "test" .TAG}}'
+        cmds:
+            - docker build --tag {{.REGISTRY}}:latest .
+            - docker tag {{.REGISTRY}}:latest {{.REGISTRY}}:{{.TAG}}
+            - task: clear:images
+
+    docker:push:
+        desc: 'Push docker image to registry'
+        deps: [dependencies]
+        vars:
+            TAG: '{{default "test" .TAG}}'
+        cmds:
+            - docker push {{.REGISTRY}}:{{.TAG}}
+
+    compose:build:
+        run: when_changed
+        desc: 'Build docker images use docker-compose'
+        deps: [dependencies]
+        env:
+            TAG: '{{default "test" .TAG}}'
+        cmds:
+            - docker-compose build
+
+    compose:push:
+        run: when_changed
+        desc: 'Push docker image use docker-compose'
+        deps: [dependencies]
+        env:
+            TAG: '{{default "test" .TAG}}'
+        cmds:
+            - docker-compose push
+
+    version:major:
+        desc: 'Increase major version'
+
+    version:minor:
+        desc: 'Increase minor version'
+
+    version:patch:
+        desc: 'Increase patch version'

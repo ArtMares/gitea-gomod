@@ -1,0 +1,11 @@
+version: '3'
+
+tasks:
+    docker:
+        run: once
+        status:
+            - command -v docker
+    docker-compose:
+        run: once
+        status:
+            - command -v docker-compose
